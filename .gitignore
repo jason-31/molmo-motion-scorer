@@ -30,6 +30,7 @@ API_SURFACE.md
 # Dataset payloads — hosted on HF (allenai/molmo-motion-1m), not GitHub
 dataset_recipes/*
 !dataset_recipes/README.md
+inputs/*
 
 # Misc
 .DS_Store

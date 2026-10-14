@@ -405,33 +405,93 @@ def load_qwen3():
     return model, tokenizer
 
 
-def extract_object_with_qwen3(model, tokenizer, caption: str, agent: str = "robot gripper") -> str:
+def extract_object_with_qwen3(model, 
+                            tokenizer, 
+                            caption: str, 
+                            agent: str = "robot gripper") -> str:
     """Use Qwen3-0.6B to extract the object name from a task caption.
 
     agent: describes who is performing the action, e.g. "robot gripper" or "human hand".
     Returns the extracted object name string (thinking tags stripped).
     """
-    task_label = "Human task" if "human" in agent.lower() else "Robot task"
+    # task_label = "Human task" if "human" in agent.lower() else "Robot task"
+    # user_content = (
+    #     f'{task_label}: "{caption}"\n'
+    #     f'Extract the noun phrase naming the object(s) directly manipulated by the {agent}. '
+    #     'Rules:\n'
+    #     '- Return ONLY the noun phrase. No verbs, no articles (a/an/the), no extra words.\n'
+    #     '- Use ONLY words from the task description. Do NOT invent new words.\n'
+    #     '- Include adjectives and numerical words (two, three) from the text.\n'
+    #     '- EXCLUDE destinations after "on/onto/into/in" and sources after "from".\n'
+    #     '- EXCLUDE objects after "around" (e.g. "put elastic around bottle" → elastic).\n'
+    #     '- EXCLUDE sub-parts referred to by "its/their" (e.g. "open laptop, wipe its screen" → laptop).\n'
+    #     '- For pouring, return the container held (e.g. "pour water from jug" → jug).\n'
+    #     '- For tools, return the tool (e.g. "wipe table with sponge" → sponge).\n'
+    #     '- If multiple objects are ALL directly grasped, separate with " | ".\n'
+    #     '- Do NOT convert verbs to adjectives (e.g. "stack lego blocks" → lego blocks).\n'
+    #     'Examples:\n'
+    #     '"pick up red plush toy from table" → red plush toy\n'
+    #     '"put brown chess pieces on chess board" → brown chess pieces\n'
+    #     '"stack lego blocks together" → lego blocks\n'
+    #     '"put green plastic bead on red string" → green plastic bead\n'
+    #     '"Place the container, strawberry toy and moose toy in the bag" → container | strawberry toy | moose toy\n'
+    #     'Answer:'
+    # )
+    # excludes: grabbing tools, supporting surfaces, containers, pipes
+    # includes: moving objcets, impact ojbects (objects being hit), smoke, liquid
     user_content = (
-        f'{task_label}: "{caption}"\n'
-        f'Extract the noun phrase naming the object(s) directly manipulated by the {agent}. '
+        f'Scene: "{caption}"\n'
+        'This is a description of a physics scene. Name the thing(s) that PHYSICALLY MOVE, '
+        'flow, or change shape during the event. Most nouns in the description are static '
+        'scenery — ignore them. Name what moves, NOT what causes the motion.\n'
         'Rules:\n'
         '- Return ONLY the noun phrase. No verbs, no articles (a/an/the), no extra words.\n'
-        '- Use ONLY words from the task description. Do NOT invent new words.\n'
+        '- Use ONLY words from the description. Do NOT invent new words.\n'
         '- Include adjectives and numerical words (two, three) from the text.\n'
-        '- EXCLUDE destinations after "on/onto/into/in" and sources after "from".\n'
-        '- EXCLUDE objects after "around" (e.g. "put elastic around bottle" → elastic).\n'
-        '- EXCLUDE sub-parts referred to by "its/their" (e.g. "open laptop, wipe its screen" → laptop).\n'
-        '- For pouring, return the container held (e.g. "pour water from jug" → jug).\n'
-        '- For tools, return the tool (e.g. "wipe table with sponge" → sponge).\n'
-        '- If multiple objects are ALL directly grasped, separate with " | ".\n'
-        '- Do NOT convert verbs to adjectives (e.g. "stack lego blocks" → lego blocks).\n'
+        '- EXCLUDE static scenery: table, tabletop, surface, floor, wall, background, '
+        'couch, shelf, ramp, whiteboard, mirror.\n'
+        f'- EXCLUDE whatever holds or releases the moving object: {agent}, grabber tool, '
+        'claw, gripper, cord, string, rope. Return what it lets go of.\n'
+        '- EXCLUDE a handheld tool acting on something else (e.g. a knife slicing fruit '
+        '→ the fruit, NOT the knife).\n'
+        '- EXCLUDE the rotating platform / turntable / rotating base itself. '
+        'Return whatever sits on it and moves with it.\n'
+        '- EXCLUDE conduits that things come out of: pipe, tube, hose, nozzle, tap, '
+        'chimney, dispenser. Return what comes out instead.\n'
+        '- EXCLUDE a vessel ONLY when it holds liquid (glass, mug, bowl, dish, jar of '
+        'liquid). Return the liquid, or the object entering it.\n'
+        '- INCLUDE a box, basket, jar, crate, mug or cup when the vessel ITSELF is moved — '
+        'lowered, released, dropped, crushed, lifted.\n'
+        '- INCLUDE free-flowing substances: liquid, water, juice, smoke, steam, dust, sand.\n'
+        '- INCLUDE objects that move because something else acts on them: struck, knocked '
+        'over, pushed, dropped, poured on, crushed, torn, sliced.\n'
+        '- For inflating or deforming, return the object that changes shape, NOT the air.\n'
+        '- EXCLUDE shadows, reflections and mirror images — they are not objects.\n'
+        '- If several separate things move, separate with " | ".\n'
+        '- If nothing in the scene moves, return NONE.\n'
         'Examples:\n'
-        '"pick up red plush toy from table" → red plush toy\n'
-        '"put brown chess pieces on chess board" → brown chess pieces\n'
-        '"stack lego blocks together" → lego blocks\n'
-        '"put green plastic bead on red string" → green plastic bead\n'
-        '"Place the container, strawberry toy and moose toy in the bag" → container | strawberry toy | moose toy\n'
+        '"A small white lampshade is on a light wood surface. A grey tennis ball rolls out '
+        'of the black tube sitting on the table and rolls towards the right." '
+        '→ grey tennis ball\n'
+        '"A blue grabber tool holds a tennis ball above a pile of green kinetic sand on a '
+        'wooden table. The grabber then releases the ball." → tennis ball\n'
+        '"A clear acrylic box suspended from a cord hangs above a tennis ball positioned on '
+        'a wooden table. The box is lowered to cover the ball." → clear acrylic box\n'
+        '"A glass beverage dispenser filled with a bright red liquid is set up on a woven '
+        'basket and is pouring the liquid into a clear glass on a wooden table." '
+        '→ bright red liquid\n'
+        '"Two rows of alternating black and white dominoes are set up on a wooden table. A '
+        'wooden stick attached to a rotating platform rotates clockwise and knocks the first '
+        'domino." → wooden stick | dominoes\n'
+        '"A yellow mug is placed on a rotating turntable that rotates clockwise illuminated '
+        'by a spotlight casting a shadow on the wall behind it." → yellow mug\n'
+        '"Two pillows on a table and two grabber tools hanging above them from which a brown '
+        'tennis ball and an orange block are suspended. The grabber tools let go of the ball '
+        'and block." → brown tennis ball | orange block\n'
+        '"A black balloon is attached to a fixed electric air pump hose on a table. Air is '
+        'being pumped in the balloon." → black balloon\n'
+        '"A stationary yellow rubber duck on a light brown wooden table against a plain '
+        'white background." → NONE\n'
         'Answer:'
     )
     messages = [{"role": "user", "content": user_content}]
@@ -439,91 +499,112 @@ def extract_object_with_qwen3(model, tokenizer, caption: str, agent: str = "robo
         messages, tokenize=False, add_generation_prompt=True, enable_thinking=True
     )
     model_inputs = tokenizer([text], return_tensors="pt").to(next(model.parameters()).device)
-    with torch.no_grad():
-        generated_ids = model.generate(**model_inputs, max_new_tokens=2048, do_sample=False)
-    new_tokens = generated_ids[0][model_inputs.input_ids.shape[1]:]
-    output = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
-    # Strip closed thinking tags, then unclosed ones (if max_new_tokens cut it off)
-    output = re.sub(r'<think>.*?</think>', '', output, flags=re.DOTALL).strip()
-    output = re.sub(r'<think>.*', '', output, flags=re.DOTALL).strip()
-    # Strip leading articles (a/an/the) and trailing punctuation
-    output = re.sub(r'^(a|an|the)\s+', '', output, flags=re.IGNORECASE).strip()
-    output = output.rstrip('.,;:')
-    # Fallback: if thinking consumed all tokens, use rule-based parser
-    if not output:
-        output, _ = extract_object_and_action(caption)
-        print(f"  [Qwen3] Caption: '{caption[:80]}' → Object: '{output}' (fallback: rule-based)")
+    output = None
+    count = 0
+    no_motion = False
+    while not output:
+        # Attempt 0 is greedy (reproducible). An empty result means the thinking chain
+        # ate the whole 2048-token budget, and re-running greedily would reproduce it
+        # verbatim — so each retry raises the temperature by 0.2 to break out of it.
+        temperature = 0.2 * count
+        sampling = (
+            dict(do_sample=True, temperature=temperature) if temperature > 0
+            else dict(do_sample=False)
+        )
+        with torch.no_grad():
+            generated_ids = model.generate(**model_inputs, max_new_tokens=2048, **sampling)
+        new_tokens = generated_ids[0][model_inputs.input_ids.shape[1]:]
+        output = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+        # Strip closed thinking tags, then unclosed ones (if max_new_tokens cut it off)
+        output = re.sub(r'<think>.*?</think>', '', output, flags=re.DOTALL).strip()
+        output = re.sub(r'<think>.*', '', output, flags=re.DOTALL).strip()
+        # Strip leading articles (a/an/the) and trailing punctuation
+        output = re.sub(r'^(a|an|the)\s+', '', output, flags=re.IGNORECASE).strip()
+        output = output.rstrip('.,;:')
+        # "NONE" = the model decided nothing in the scene moves. That is a valid answer,
+        # not a failed generation, so stop here instead of retrying. Empty string makes
+        # grounding_worker skip the video (it can't ground an object that isn't there).
+        if output.strip().upper() in ("NONE", "NULL", "N/A"):
+            output = ""
+            no_motion = True
+            break
+        count += 1
+        if count > 5:
+            break
+    if no_motion:
+        print(f"  [Qwen3] Caption: '{caption[:80]}' → NONE (no moving object)")
     else:
-        print(f"  [Qwen3] Caption: '{caption[:80]}' → Object: '{output}'")
+        print(f"  [Qwen3] Caption: '{caption[:80]}' → Object: '{output}'"
+              + (f" (after {count} retries)" if count else ""))
     return output
 
 
-def extract_all_objects_with_qwen3(model, tokenizer, caption: str) -> str:
-    """Use Qwen3-0.6B to extract ALL objects (including destinations) from a task caption.
+# def extract_all_objects_with_qwen3(model, tokenizer, caption: str) -> str:
+#     """Use Qwen3-0.6B to extract ALL objects (including destinations) from a task caption.
 
-    Unlike extract_object_with_qwen3() which only extracts moved objects,
-    this extracts every noun phrase with its adjectives.
+#     Unlike extract_object_with_qwen3() which only extracts moved objects,
+#     this extracts every noun phrase with its adjectives.
 
-    Returns the extracted object names string (thinking tags stripped).
-    """
-    user_content = (
-        f'Sentence: "{caption}"\n'
-        'List ALL physical objects mentioned in this sentence. Include objects that are picked up, '
-        'placed on, placed into, wiped, poured from, or otherwise interacted with. '
-        'Use ONLY words from the sentence — do NOT add words not in the text. '
-        'Include adjectives and numerical words from the text. '
-        'Do NOT list any object more than once. Do NOT include verbs or actions. '
-        'Repeat shared nouns (e.g. "plum plush toy and banana plush toy", NOT "plum and banana"). '
-        'Separate with commas and "and" before the last item. '
-        'Examples: '
-        '"Grab the green blanket and put that on the table" → green blanket and table, '
-        '"Put the lid on the pot" → lid and pot, '
-        '"Pick up the red plush toy" → red plush toy, '
-        '"Move the plum and the banana plush toy from the oven tray to the counter then move the pineapple plush toy to the box" → plum plush toy, banana plush toy, pineapple plush toy, oven tray, counter and box, '
-        '"Put the elastic around the bottle" → elastic and bottle, '
-        '"Open the toaster oven" → toaster oven, '
-        '"Cover the computer mouse with the tea towel" → computer mouse and tea towel, '
-        '"Pick up the pen from the mug cup and put it on the table" → pen, mug cup and table, '
-        '"Put the fork into the mug" → fork and mug, '
-        '"Pick the two bottles on the table and put them in the bowl" → two bottles and bowl, '
-        '"Pour some contents of the jug into the bowl" → contents, jug and bowl, '
-        '"Wipe the table with the sponge" → table and sponge, '
-        '"Place the container, strawberry toy and moose toy in the bag" → container, strawberry toy, moose toy and bag, '
-        '"Move the colorless bottle" → colorless bottle. '
-        'Answer with the noun phrases only, no extra words.'
-    )
-    messages = [{"role": "user", "content": user_content}]
-    text = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True, enable_thinking=True
-    )
-    model_inputs = tokenizer([text], return_tensors="pt").to(next(model.parameters()).device)
-    with torch.no_grad():
-        generated_ids = model.generate(**model_inputs, max_new_tokens=2048, do_sample=False)
-    new_tokens = generated_ids[0][model_inputs.input_ids.shape[1]:]
-    output = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
-    # Strip closed thinking tags, then unclosed ones (if max_new_tokens cut it off)
-    output = re.sub(r'<think>.*?</think>', '', output, flags=re.DOTALL).strip()
-    output = re.sub(r'<think>.*', '', output, flags=re.DOTALL).strip()
-    # Strip leading articles (a/an/the) and trailing punctuation
-    output = re.sub(r'^(a|an|the)\s+', '', output, flags=re.IGNORECASE).strip()
-    output = output.rstrip('.,;:')
-    # Strip trailing "and" artifact (e.g. "heat gun and counter, and" → "heat gun and counter")
-    output = re.sub(r',?\s+and\s*$', '', output).strip()
-    # Remove duplicate object phrases
-    parts = re.split(r',\s*', output)
-    seen = []
-    for p in parts:
-        p = p.strip()
-        if p and p.lower() not in [s.lower() for s in seen]:
-            seen.append(p)
-    output = ', '.join(seen)
-    # Fallback: if thinking consumed all tokens, use rule-based parser
-    if not output:
-        output, _ = extract_object_and_action(caption)
-        print(f"  [Qwen3-all] Caption: '{caption[:80]}' → Objects: '{output}' (fallback: rule-based)")
-    else:
-        print(f"  [Qwen3-all] Caption: '{caption[:80]}' → Objects: '{output}'")
-    return output
+#     Returns the extracted object names string (thinking tags stripped).
+#     """
+#     user_content = (
+#         f'Sentence: "{caption}"\n'
+#         'List ALL physical objects mentioned in this sentence. Include objects that are picked up, '
+#         'placed on, placed into, wiped, poured from, or otherwise interacted with. '
+#         'Use ONLY words from the sentence — do NOT add words not in the text. '
+#         'Include adjectives and numerical words from the text. '
+#         'Do NOT list any object more than once. Do NOT include verbs or actions. '
+#         'Repeat shared nouns (e.g. "plum plush toy and banana plush toy", NOT "plum and banana"). '
+#         'Separate with commas and "and" before the last item. '
+#         'Examples: '
+#         '"Grab the green blanket and put that on the table" → green blanket and table, '
+#         '"Put the lid on the pot" → lid and pot, '
+#         '"Pick up the red plush toy" → red plush toy, '
+#         '"Move the plum and the banana plush toy from the oven tray to the counter then move the pineapple plush toy to the box" → plum plush toy, banana plush toy, pineapple plush toy, oven tray, counter and box, '
+#         '"Put the elastic around the bottle" → elastic and bottle, '
+#         '"Open the toaster oven" → toaster oven, '
+#         '"Cover the computer mouse with the tea towel" → computer mouse and tea towel, '
+#         '"Pick up the pen from the mug cup and put it on the table" → pen, mug cup and table, '
+#         '"Put the fork into the mug" → fork and mug, '
+#         '"Pick the two bottles on the table and put them in the bowl" → two bottles and bowl, '
+#         '"Pour some contents of the jug into the bowl" → contents, jug and bowl, '
+#         '"Wipe the table with the sponge" → table and sponge, '
+#         '"Place the container, strawberry toy and moose toy in the bag" → container, strawberry toy, moose toy and bag, '
+#         '"Move the colorless bottle" → colorless bottle. '
+#         'Answer with the noun phrases only, no extra words.'
+#     )
+#     messages = [{"role": "user", "content": user_content}]
+#     text = tokenizer.apply_chat_template(
+#         messages, tokenize=False, add_generation_prompt=True, enable_thinking=True
+#     )
+#     model_inputs = tokenizer([text], return_tensors="pt").to(next(model.parameters()).device)
+#     with torch.no_grad():
+#         generated_ids = model.generate(**model_inputs, max_new_tokens=2048, do_sample=False)
+#     new_tokens = generated_ids[0][model_inputs.input_ids.shape[1]:]
+#     output = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+#     # Strip closed thinking tags, then unclosed ones (if max_new_tokens cut it off)
+#     output = re.sub(r'<think>.*?</think>', '', output, flags=re.DOTALL).strip()
+#     output = re.sub(r'<think>.*', '', output, flags=re.DOTALL).strip()
+#     # Strip leading articles (a/an/the) and trailing punctuation
+#     output = re.sub(r'^(a|an|the)\s+', '', output, flags=re.IGNORECASE).strip()
+#     output = output.rstrip('.,;:')
+#     # Strip trailing "and" artifact (e.g. "heat gun and counter, and" → "heat gun and counter")
+#     output = re.sub(r',?\s+and\s*$', '', output).strip()
+#     # Remove duplicate object phrases
+#     parts = re.split(r',\s*', output)
+#     seen = []
+#     for p in parts:
+#         p = p.strip()
+#         if p and p.lower() not in [s.lower() for s in seen]:
+#             seen.append(p)
+#     output = ', '.join(seen)
+#     # Fallback: if thinking consumed all tokens, use rule-based parser
+#     if not output:
+#         output, _ = extract_object_and_action(caption)
+#         print(f"  [Qwen3-all] Caption: '{caption[:80]}' → Objects: '{output}' (fallback: rule-based)")
+#     else:
+#         print(f"  [Qwen3-all] Caption: '{caption[:80]}' → Objects: '{output}'")
+#     return output
 
 
 # ---------------------------------------------------------------------------

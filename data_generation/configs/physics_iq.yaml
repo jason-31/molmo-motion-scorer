@@ -1,0 +1,14 @@
+# Physics-IQ (real take-1 videos + I2V generations).
+#
+# Scenes are physical events, not manipulation: balls roll out of tubes, liquid
+# pours, boxes are lowered by cords. There is usually no hand and nothing is
+# "gripped and picked up", so the pointing prompt drops the action clause and
+# grounds the object directly — Qwen3 has already narrowed {obj} to the thing
+# that actually moves.
+corpus: physics_iq
+agent: "grabber tool"        # only used by the Qwen3 exclusion rule, not by pointing
+point_prompt_template: "point to {obj}"
+recaption: false             # descriptions.txt is detailed; skips loading Molmo2-8B (33G)
+fps: 24                      # gt_24fps and the magi candidates are both native 24fps,
+                             # so tracks stay frame-for-frame comparable with no resampling
+clip_threshold: 0.02
